@@ -1,0 +1,17 @@
+services:
+  freecad:
+    build: .
+    image: freecad:1.1.3
+    container_name: freecad
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Kolkata
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+    volumes:
+      - ./config:/config
+      - ./designs:/config/designs
+    shm_size: "1gb"
+    restart: unless-stopped

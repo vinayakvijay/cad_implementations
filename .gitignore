@@ -1,0 +1,28 @@
+# FreeCAD / linuxserver app data (mounted at /config)
+config/
+
+# Runtime leftovers if they appear under designs/
+designs/.config/
+designs/.cache/
+designs/.local/
+designs/Desktop/
+designs/ssl/
+designs/.XDG/
+designs/.bashrc
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Generated CAD outputs (regenerate from scripts)
+*.FCStd
+*.stl
+*.step
+*.stp
+
+# Editor / OS
+.cursor/
+.DS_Store
+*.swp
+*~
