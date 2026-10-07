@@ -1,0 +1,29 @@
+# Slicer layer on top of the already-built FreeCAD image (see Dockerfile).
+# Adds PrusaSlicer (STL -> .sl1) and UVtools (.sl1 -> .ctb for Creality LD-002H).
+ARG BASE_IMAGE=freecad:1.1.3
+FROM ${BASE_IMAGE}
+
+ARG UVTOOLS_VERSION=7.0.1
+
+RUN curl -fsSL -o /tmp/uvtools.deb \
+      "https://github.com/sn4k3/UVtools/releases/download/v${UVTOOLS_VERSION}/UVtools_linux-x64_v${UVTOOLS_VERSION}.deb" \
+ && apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      prusa-slicer /tmp/uvtools.deb \
+ && ln -sf /usr/lib/uvtools/UVtoolsCmd /usr/local/bin/UVtoolsCmd \
+ && rm -f /tmp/uvtools.deb \
+ && rm -rf /var/lib/apt/lists/*
+
+# Fail the build early if either CLI is broken
+RUN prusa-slicer --help >/dev/null && UVtoolsCmd --version
+
+# Default desktop autostart (copied to a fresh /config on first start):
+# DESKTOP_APP=prusaslicer|uvtools gives a single-app desktop, anything else starts FreeCAD.
+# Runs the app in the foreground (no exec) so the RESTART_APP watchdog can track it.
+RUN printf '%s\n' \
+      'case "${DESKTOP_APP:-freecad}" in' \
+      '  prusaslicer|uvtools) /config/designs/gui.sh --wait "$DESKTOP_APP" ;;' \
+      '  *) /opt/freecad/AppRun ;;' \
+      'esac' > /defaults/autostart_wayland
+
+WORKDIR /config/designs

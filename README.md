@@ -6,10 +6,14 @@ FreeCAD-in-Docker workspace for parametric CAD designs. The first design is a so
 
 | Path | Purpose |
 |------|---------|
-| `Dockerfile` | Thin image based on `lscr.io/linuxserver/freecad:1.1.3` |
-| `docker-compose.yml` | Build/run FreeCAD with volume mounts |
+| `Dockerfile` | Thin image based on `lscr.io/linuxserver/freecad:1.1.3` (tagged `freecad:1.1.3`) |
+| `Dockerfile.slicer` | Adds PrusaSlicer + UVtools on top of `freecad:1.1.3` (tagged `freecad-slicer:1.1.3`) |
+| `docker-compose.yml` | Build/run FreeCAD + slicer with volume mounts |
 | `designs/` | CAD scripts (and generated outputs on disk) |
 | `designs/bcc_beam_lattice.py` | BCC beam lattice generator |
+| `designs/slice_ld002h.sh` | Slices an STL into a `.ctb` for the Creality LD-002H |
+| `designs/gui.sh` | Opens PrusaSlicer or UVtools in the browser desktop |
+| `designs/printers/creality_ld002h.ini` | PrusaSlicer SLA profile for the LD-002H |
 | `config/` | FreeCAD / linuxserver app data (not tracked in git) |
 | `.gitignore` | Ignores app data, caches, and generated CAD binaries |
 
@@ -20,11 +24,30 @@ FreeCAD-in-Docker workspace for parametric CAD designs. The first design is a so
 
 CAD files are available in Docker at `/config/designs` without mixing them into FreeCAD's app tree.
 
-## Build
+## Set up on a new computer
+
+With Docker Engine and the compose v2 plugin installed, run from the repo root:
 
 ```bash
+bash .claude/skills/setting-up-cad-print-env/setup.sh --check   # preflight only
+bash .claude/skills/setting-up-cad-print-env/setup.sh           # build, start, verify
+```
+
+This builds both images, starts the three desktops, generates and slices the sample lattice, and prints the links. It's safe to re-run. In Claude Code, the project skill `setting-up-cad-print-env` wraps it and includes troubleshooting. The manual steps are below.
+
+## Build
+
+The compose image (`freecad-slicer:1.1.3`) is a thin layer on top of the locally built `freecad:1.1.3`, so adding the slicer does not re-pull or rebuild FreeCAD.
+
+```bash
+# only needed once, or on a fresh machine (pulls the ~6 GB linuxserver base)
+docker build -t freecad:1.1.3 .
+
+# adds PrusaSlicer + UVtools (a few minutes)
 docker compose build
 ```
+
+Behind a proxy, export `http_proxy`/`https_proxy` (and `no_proxy`) in the shell you run compose from. Compose passes them to the build as build args (not stored in the image) and into the running containers. PrusaSlicer needs them at runtime to fetch its profile catalogue; without them it shows "Failed to download Archive Database Manifest ... Error 28".
 
 ## Run
 
@@ -32,7 +55,7 @@ docker compose build
 docker compose up -d
 ```
 
-- GUI (browser): [https://localhost:3001](https://localhost:3001) (HTTPS; accept the self-signed cert)
+- GUIs (browser, HTTPS; accept the self-signed cert): FreeCAD [https://localhost:3001](https://localhost:3001), PrusaSlicer [https://localhost:3002](https://localhost:3002), UVtools [https://localhost:3003](https://localhost:3003)
 - Also exposed: port `3000`
 
 Stop:
@@ -46,7 +69,7 @@ docker compose down
 Edit parameters at the top of `designs/bcc_beam_lattice.py` (`NX`, `NY`, `NZ`, `CELL_SIZE`, `BEAM_DIAMETER`), then:
 
 ```bash
-docker compose exec freecad /opt/freecad/usr/bin/freecadcmd /config/designs/bcc_beam_lattice.py
+docker compose exec -u abc freecad /opt/freecad/usr/bin/freecadcmd /config/designs/bcc_beam_lattice.py
 ```
 
 Outputs (gitignored; regenerate anytime):
@@ -56,7 +79,59 @@ Outputs (gitignored; regenerate anytime):
 
 Open the `.FCStd` in the FreeCAD GUI to view or edit the solid.
 
+## Slice for the Creality LD-002H
+
+The LD-002H (6.08" 2K mono LCD, 1620×2560 px, 82.62×130.56 mm, 160 mm Z) reads Chitubox `.ctb` files. The pipeline is:
+
+1. **PrusaSlicer** places the model at the plate centre, adds the pad/supports and rasterizes each layer → `.sl1`
+2. **UVtools** converts the `.sl1` into `.ctb` (v3) for the LD-002H
+
+```bash
+docker compose exec -u abc freecad /config/designs/slice_ld002h.sh /config/designs/bcc_beam_lattice.stl
+```
+
+This writes `designs/bcc_beam_lattice.ctb` and prints a summary (resolution, layer count, exposures, print time in seconds, resin volume). Copy the `.ctb` to the printer's USB stick.
+
+Defaults (from `designs/printers/creality_ld002h.ini`): 0.05 mm layers, 2.5 s normal / 30 s bottom exposure, 6 bottom layers, no supports, and a zero-elevation pad (the model sits on the plate inside a 1 mm pad with breakaway connectors). Override per run:
+
+| Option | Meaning |
+|--------|---------|
+| `-o FILE` | Output `.ctb` path (default: next to the STL) |
+| `--layer MM` | Layer height |
+| `--exposure S` | Normal layer exposure (s) |
+| `--bottom-exposure S` | Bottom layer exposure (s) |
+| `--bottom-layers N` | Number of bottom layers |
+| `--supports` | Generate supports (model elevated on a pad) |
+| `--no-pad` | No pad |
+| `--keep-sl1` | Keep the intermediate `.sl1` |
+
+Exposure values are a starting point for generic standard resin; calibrate for your resin (e.g. with UVtools' exposure-finder or a calibration print) and update the `.ini`.
+
+### View the slicing in a GUI
+
+Each tool has its own browser desktop (accept the self-signed cert):
+
+| Link | App | Use it for |
+|------|-----|-----------|
+| [https://localhost:3001](https://localhost:3001) | FreeCAD | Modelling |
+| [https://localhost:3002](https://localhost:3002) | PrusaSlicer | Model on the LD-002H plate, pad/supports, layer preview (LD-002H profile preloaded) |
+| [https://localhost:3003](https://localhost:3003) | UVtools | Inspect the sliced `.ctb` layer by layer, exposures, issue detection |
+
+All three share `designs/` (at `/config/designs` in each app's file dialog). The PrusaSlicer and UVtools desktops relaunch their app automatically if you close it. Each has its own app data folder (`config-prusaslicer/`, `config-uvtools/`, not tracked in git).
+
+Start/stop them with the rest of the stack (`docker compose up -d` / `docker compose down`), or individually: `docker compose up -d uvtools`.
+
+You can also open either app inside the FreeCAD desktop, from its right-click menu or with:
+
+```bash
+docker compose exec -u abc freecad /config/designs/gui.sh uvtools /config/designs/bcc_beam_lattice.ctb
+```
+
+Use `gui.sh` rather than typing `prusa-slicer` in a desktop terminal: the apps only open windows on Xwayland display `:0`, while the desktop exports `DISPLAY=:1`.
+
 ## Notes
 
 - Prefer `docker compose` over a single `docker run` that mounts `./designs` as `/config` — that mixes app data with CAD files.
 - If you already have an old `freecad` container, remove it before `compose up` so the new mounts apply: `docker rm -f freecad`
+- After `docker compose build`, run `docker compose up -d` to recreate the container on the new image (`./config` and `./designs` persist).
+- Use `-u abc` with `docker compose exec` so generated files are owned by your host user rather than root.
