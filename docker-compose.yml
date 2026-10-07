@@ -1,17 +1,84 @@
 services:
   freecad:
-    build: .
-    image: freecad:1.1.3
+    # FreeCAD + PrusaSlicer + UVtools, layered on the locally built freecad:1.1.3
+    # (build that first with: docker build -t freecad:1.1.3 .)
+    build:
+      context: .
+      dockerfile: Dockerfile.slicer
+      args:
+        - http_proxy
+        - https_proxy
+        - HTTP_PROXY
+        - HTTPS_PROXY
+    image: freecad-slicer:1.1.3
     container_name: freecad
     environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Asia/Kolkata
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Asia/Kolkata}
+      # proxy passthrough from the host shell (unset values are simply not passed)
+      - http_proxy
+      - https_proxy
+      - HTTP_PROXY
+      - HTTPS_PROXY
+      - no_proxy
+      - NO_PROXY
     ports:
       - "3000:3000"
       - "3001:3001"
     volumes:
       - ./config:/config
+      - ./designs:/config/designs
+    shm_size: "1gb"
+    restart: unless-stopped
+
+  # Single-app desktops on their own links (same image, separate /config)
+  prusaslicer:
+    image: freecad-slicer:1.1.3
+    container_name: prusaslicer
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Asia/Kolkata}
+      # proxy passthrough from the host shell (unset values are simply not passed)
+      - http_proxy
+      - https_proxy
+      - HTTP_PROXY
+      - HTTPS_PROXY
+      - no_proxy
+      - NO_PROXY
+      - TITLE=PrusaSlicer
+      - DESKTOP_APP=prusaslicer
+      - RESTART_APP=true
+    ports:
+      - "3002:3001"
+    volumes:
+      - ./config-prusaslicer:/config
+      - ./designs:/config/designs
+    shm_size: "1gb"
+    restart: unless-stopped
+
+  uvtools:
+    image: freecad-slicer:1.1.3
+    container_name: uvtools
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Asia/Kolkata}
+      # proxy passthrough from the host shell (unset values are simply not passed)
+      - http_proxy
+      - https_proxy
+      - HTTP_PROXY
+      - HTTPS_PROXY
+      - no_proxy
+      - NO_PROXY
+      - TITLE=UVtools
+      - DESKTOP_APP=uvtools
+      - RESTART_APP=true
+    ports:
+      - "3003:3001"
+    volumes:
+      - ./config-uvtools:/config
       - ./designs:/config/designs
     shm_size: "1gb"
     restart: unless-stopped

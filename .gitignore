@@ -1,5 +1,7 @@
 # FreeCAD / linuxserver app data (mounted at /config)
 config/
+config-prusaslicer/
+config-uvtools/
 
 # Runtime leftovers if they appear under designs/
 designs/.config/
@@ -20,6 +22,11 @@ __pycache__/
 *.stl
 *.step
 *.stp
+
+# Generated slicer outputs (regenerate with designs/slice_ld002h.sh)
+*.sl1
+*.sl1s
+*.ctb
 
 # Editor / OS
 .cursor/
